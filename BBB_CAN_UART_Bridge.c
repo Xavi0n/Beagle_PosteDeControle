@@ -270,7 +270,7 @@ int TransmitUART()
 	ssize_t bytes_written = write(uart_fd, UARTFrameOut, UART_BUFFER_SIZE); // Writes data to UART port
 
 	printf("Sending UART frame:\n");									   // Outputs what has been sent
-	for (i = 0; i < UART_FRAME_SIZE; i++)								   //
+	for (i = 0; i < UART_BUFFER_SIZE; i++)								   //
 	{																   //
 		printf(" 0x%02X", UARTFrameOut[i]);							   //
 	} //
