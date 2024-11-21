@@ -65,16 +65,14 @@ int main(void)
 	{ // Code exécuté par le processus enfant
 		while (1)
 		{
-			ReceiveUART();	// TransmitCAN est appelé en dehors de ReceiveUART parce que 
-			TransmitCAN();  // ReceiveUART est bloquant
+			ReceiveUART();	// TransmitCAN est appelé dans receiveUART 
 		}
 	}
 	else
 	{ // Code exécuté par le processus parent
 		while (1)
 		{
-			ReceiveCAN();	// TransmitUART appelé en dehors de ReceiveCAN parce que
-			TransmitUART(); // ReceiveCAN est bloquant
+			ReceiveCAN();	// TransmitUART est appelé dans ReceiveCAN
 		}
 	}
 
@@ -107,6 +105,7 @@ int InitCan()
 		perror("Bind");
 		return -1;
 	}
+	printf("CAN initialized successfully\r\n");
 	return 0;
 }
 
@@ -142,6 +141,8 @@ int InitUART()
 	options.c_cflag &= ~PARENB;			   // No parity
 	options.c_cflag &= ~CSTOPB;			   // 1 stop bit
 	options.c_cflag &= ~CRTSCTS;		   // No hardware flow control
+	options.c_lflag &= ~ICANON; 		   // Disable canonical mode
+	options.c_lflag &= ~(ECHO | ECHOE);    // Non Cannonical mode, Disable echo, Disable signal
 	options.c_cflag |= CREAD | CLOCAL;	   // Enable receiver, local mode
 	tcsetattr(uart_fd, TCSANOW, &options); // Applies previously declared settings to the UART port
 
@@ -176,13 +177,15 @@ int ReceiveCAN()
 		return -1;		// Return wit hvalue -1 and displays reading error
 	}
 	printf("Processing received CAN data:\n");
+	ucCheckSum = 0;
 	for (i = 0; i < CAN_BUFFER_SIZE; i++)		 //
 	{											 //
-		ucCheckSum = ucCheckSum + frame.data[i]; // Calcul du CheckSum
+		ucCheckSum += frame.data[i]; 			 // Calcul du CheckSum
 		UARTFrameOut[(i + 2)] = frame.data[i];	 // Copie de la trame recue dans un tableau
 		printf("%02X", UARTFrameOut[i]);		 // Printf des valeurs pour dégogage
 	} //
 	printf("\n"); //
+	TransmitUART();
 }
 
 int TransmitCAN()
@@ -214,7 +217,6 @@ int TransmitCAN()
 
 int ReceiveUART()
 {
-	printf("Je suis dans la reception \n");
 	int bytes_available = 0;
 	while (bytes_available < UART_BUFFER_SIZE)
 	{
@@ -227,8 +229,7 @@ int ReceiveUART()
 		usleep(1000); // 1 ms delay
 	}
 
-	// If exactly 11 bytes are available, read them into UARTFrameIn
-
+	// When the eleventh byte is seen in buffer, read it into UARTFrameIn
 	int bytes_read = read(uart_fd, UARTFrameIn, UART_BUFFER_SIZE);
 
 	printf("11 bytes received from UART: ");
@@ -240,15 +241,15 @@ int ReceiveUART()
 
 	// Verify checksum
 	ucCheckSum = 0;
-	for (i = 2; i < UART_BUFFER_SIZE; i++)
+	for (i = 2; i < UART_BUFFER_SIZE - 1; i++)
 	{
 		ucCheckSum += UARTFrameIn[i];
 	}
 
-	if (ucCheckSum == UARTFrameIn[UART_BUFFER_SIZE]) // Compare with last byte (checksum byte)
+	if (ucCheckSum == UARTFrameIn[UART_BUFFER_SIZE-1]) // Compare with last byte (checksum byte)
 	{
 		printf("Checksum verified successfully!\n");
-		memcpy(UARTFrameOut, UARTFrameIn, UART_BUFFER_SIZE);
+		TransmitCAN();
 	}
 	else
 	{
@@ -265,16 +266,16 @@ int ReceiveUART()
 
 int TransmitUART()
 {
-	UARTFrameOut[0] = 0x24;													// Start Condition de la trame UART ('$' en hexadecimal)
-	UARTFrameOut[1] = 0x08;													// Nombre d'octets de data a transmettre (exclus: '$', nb d'octets à transmettre et checksum)
-	ssize_t bytes_written = write(uart_fd, UARTFrameOut, UART_BUFFER_SIZE); // Writes data to UART port
-
+	UARTFrameOut[0] = 0x24;					// Start Condition de la trame UART ('$' en hexadecimal)
+	UARTFrameOut[1] = 0x08;					// Nombre d'octets de data a transmettre (exclus: '$', nb d'octets à transmettre et checksum)
+	
 	printf("Sending UART frame:\n");		// Outputs what has been sent
 	for (i = 0; i <= UART_BUFFER_SIZE; i++) //
 	{										//
 		printf(" 0x%02X", UARTFrameOut[i]); //
 	} //
 	printf("\n");
+	//ssize_t bytes_written = write(uart_fd, UARTFrameOut, UART_BUFFER_SIZE); // Writes data to UART port
 
 	for (i = 0; i < UART_BUFFER_SIZE; i++) // Reset value for UARTFrameOut
 	{
